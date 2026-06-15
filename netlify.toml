@@ -5,7 +5,7 @@
 # (.netlify/v1/functions/server.mjs → dist/server/) in one pass.
 
 [build]
-  command = "vite build"
+  command = "vite build && node scripts/patch-error-page.mjs"
   publish = "dist/client"
 
 [build.environment]
