@@ -1,27 +1,25 @@
 # Netlify build configuration for TanStack Start ≥ 1.132.
 #
-# We use the @netlify/vite-plugin-tanstack-start preset path. If you haven't
-# already, install the plugin:
-#   npm install -D @netlify/vite-plugin-tanstack-start
-# and add it to vite.config.ts. The plugin handles SSR + edge function
-# routing automatically and emits the right .netlify/v1/functions output.
+# The Lovable preset (@lovable.dev/vite-tanstack-config) auto-detects the
+# Nitro preset from the NITRO_PRESET env var. Setting it to "netlify" here
+# makes Nitro emit a Netlify-compatible function bundle at
+# .netlify/v1/functions/server.
 
 [build]
   command = "vite build"
   publish = "dist/client"
 
+[build.environment]
+  NITRO_PRESET = "netlify"
+  NODE_VERSION = "20"
+
 [dev]
   command = "vite dev"
   port = 3000
 
-# Set NODE_VERSION to match the local dev environment so Netlify's build
-# sandbox doesn't drift on minor versions.
-[build.environment]
-  NODE_VERSION = "20"
-
-# The Netlify preset for TanStack Start expects this SPA-fallback for any
-# route the SSR function doesn't catch. Asset requests are served directly
-# from dist/client.
+# SPA-fallback: any route that the SSR function doesn't match gets
+# rewritten to the server function, which then streams the rendered HTML
+# (or, for assets, falls through to dist/client).
 [[redirects]]
   from = "/*"
   to = "/.netlify/functions/server"
