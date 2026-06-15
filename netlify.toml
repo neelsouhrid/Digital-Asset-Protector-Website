@@ -19,7 +19,12 @@
 # dist/server/assets/. Netlify's function bundler cannot trace dynamic
 # imports, so we explicitly include the entire dist/server directory.
 [functions]
-  included_files = ["dist/server/**"]
+  included_files = [
+    "dist/server/**",
+    "node_modules/h3-v2/**",
+    "node_modules/rou3/**",
+    "node_modules/srvx/**"
+  ]
   node_bundler = "none"
 
 # Catch-all rewrite so every request that isn't a static asset in
