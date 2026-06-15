@@ -1,9 +1,8 @@
-# Netlify build configuration for TanStack Start ≥ 1.132.
+# Netlify build configuration for TanStack Start (SSR).
 #
-# The @netlify/vite-plugin-tanstack-start plugin (wired in vite.config.ts)
-# orchestrates both the Vite client build (dist/client/) and the Nitro server
-# build (.netlify/v1/functions/server) in a single `vite build` run. Netlify's
-# build system auto-discovers the function directory and wires the redirect.
+# The @netlify/vite-plugin-tanstack-start plugin (in vite.config.ts)
+# builds both the client bundle (dist/client/) and the SSR server
+# (.netlify/v1/functions/server.mjs → dist/server/) in one pass.
 
 [build]
   command = "vite build"
@@ -16,8 +15,17 @@
   command = "vite dev"
   port = 3000
 
-# No manual redirects needed — the @netlify/vite-plugin-tanstack-start
-# plugin emits a v2 Netlify function at .netlify/v1/functions/server.mjs
-# that declares path = "/*" in its config export, so Netlify automatically
-# routes all requests through the SSR handler. Adding a [[redirects]] here
-# would conflict and cause 500 errors by pointing at the wrong endpoint.
+# The SSR function uses dynamic import() to load chunks from
+# dist/server/assets/. Netlify's function bundler cannot trace dynamic
+# imports, so we explicitly include the entire dist/server directory.
+[functions]
+  included_files = ["dist/server/**"]
+  node_bundler = "none"
+
+# Catch-all rewrite so every request that isn't a static asset in
+# dist/client/ is handled by the SSR function.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = false
