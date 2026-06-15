@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Globe, Radio, Plus, Minus, Loader2, MapPin } from "lucide-react";
+import { Globe, Radio, Plus, Minus, Loader2, MapPin, RefreshCw } from "lucide-react";
 import { SightingsMap } from "@/components/map/SightingsMap";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchSightingsForUser } from "@/lib/vault";
+import { fetchSightings } from "@/lib/api/data.functions";
+import { uniqueRegions } from "@/lib/sightings";
 
 export const Route = createFileRoute("/app/map")({
   head: () => ({ meta: [{ title: "Distribution Map · Asset Vault" }] }),
@@ -15,15 +16,16 @@ function MapPage() {
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ["vault", "sightings"],
     queryFn: async () => {
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
-      if (!userData.user) throw new Error("Not signed in");
-      return fetchSightingsForUser(userData.user.id);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Not signed in");
+      return fetchSightings({ data: { accessToken: token } });
     },
     staleTime: 30_000,
   });
 
   const sightings = data ?? [];
+  const regionCount = uniqueRegions(sightings).length;
 
   return (
     <div className="space-y-8">
@@ -41,11 +43,7 @@ function MapPage() {
 
       <section className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
         <div className="relative h-[460px] w-full">
-          {isLoading ? (
-            <MapLoading />
-          ) : (
-            <SightingsMap sightings={sightings} />
-          )}
+          {isLoading ? <MapLoading /> : <SightingsMap sightings={sightings} />}
 
           {/* Zoom controls */}
           <div className="absolute left-4 top-4 z-[400] flex flex-col overflow-hidden rounded-xl border border-border bg-white shadow-soft">
@@ -78,8 +76,14 @@ function MapPage() {
               type="button"
               onClick={() => refetch()}
               disabled={isRefetching}
-              className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
+              className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
+              aria-label="Refresh sightings"
             >
+              {isRefetching ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
               {isRefetching ? "Refreshing…" : "Refresh"}
             </button>
           </div>
@@ -95,7 +99,7 @@ function MapPage() {
           <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {sightings.length === 0
               ? "0 active regions"
-              : `${uniqueRegions(sightings).length} region${uniqueRegions(sightings).length === 1 ? "" : "s"}`}
+              : `${regionCount} region${regionCount === 1 ? "" : "s"}`}
           </span>
         </div>
 
@@ -118,12 +122,12 @@ function MapPage() {
                 key={s.id}
                 className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background px-3.5 py-3"
               >
-                <div className="flex items-center gap-3">
-                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                     <MapPin className="h-3.5 w-3.5" />
                   </span>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {s.location_name ?? "Unknown location"}
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -134,9 +138,9 @@ function MapPage() {
                     </p>
                   </div>
                 </div>
-                <code className="hidden truncate font-mono text-[10px] text-muted-foreground sm:block">
-                  {s.matched_phash.slice(0, 10)}…
-                </code>
+                <span className="hidden shrink-0 text-[10px] font-mono text-muted-foreground sm:block">
+                  {s.location_lat.toFixed(1)}, {s.location_lng.toFixed(1)}
+                </span>
               </li>
             ))}
           </ul>
@@ -152,16 +156,4 @@ function MapLoading() {
       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
     </div>
   );
-}
-
-function uniqueRegions(sightings: { location_lat: number; location_lng: number }[]): string[] {
-  // Cheap region bucketing by 10° grid — gives "active regions" a meaningful count
-  // even when many sightings cluster together.
-  const seen = new Set<string>();
-  for (const s of sightings) {
-    const lat = Math.round(s.location_lat / 10) * 10;
-    const lon = Math.round(s.location_lng / 10) * 10;
-    seen.add(`${lat},${lon}`);
-  }
-  return Array.from(seen);
 }

@@ -12,4 +12,13 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Override the Lovable preset's default Cloudflare target with Netlify.
+  // For TanStack Start ≥ 1.132, the modern way is the @netlify/vite-plugin-tanstack-start
+  // plugin (see netlify.toml). We forward `target: "netlify"` to tanstackStart so
+  // Nitro emits a Netlify-compatible build artifact (.netlify/v1/functions/...).
+  vite: {
+    build: {
+      target: "es2022",
+    },
+  },
 });

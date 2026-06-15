@@ -1,8 +1,34 @@
-import { createFileRoute, Outlet, Link, redirect, useLocation, useRouter } from "@tanstack/react-router";
-import { LayoutGrid, FolderLock, AlertTriangle, Globe, Bell, LogOut, Shield } from "lucide-react";
+import {
+  createFileRoute,
+  Outlet,
+  Link,
+  redirect,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import {
+  LayoutGrid,
+  FolderLock,
+  AlertTriangle,
+  Globe,
+  Bell,
+  ChevronDown,
+  Shield,
+  LogOut,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchProfileDisplayName, fetchNotifications } from "@/lib/api/data.functions";
 
 export const Route = createFileRoute("/app")({
   ssr: false,
@@ -25,47 +51,46 @@ const tabs = [
 
 function AppLayout() {
   const loc = useLocation();
-  const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
+  const { user } = Route.useRouteContext();
 
-  const { data: user } = useQuery({
-    queryKey: ["auth", "user"],
+  // Resolve display name from profiles → user_metadata → email, async.
+  // Synchronous fallback below renders immediately on first paint to avoid
+  // a flash of "User" / "R" / email-local.
+  const { data: resolvedName } = useQuery({
+    queryKey: ["profile", "display-name", user.id],
     queryFn: async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      return data.user;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return null;
+      return fetchProfileDisplayName({ data: { accessToken: token } });
     },
     staleTime: 60_000,
   });
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const syncName =
+    (typeof meta.display_name === "string" && meta.display_name) ||
+    (typeof meta.full_name === "string" && meta.full_name) ||
+    (typeof meta.name === "string" && meta.name) ||
+    (user.email ? user.email.split("@")[0] : "") ||
+    "User";
+  const displayName = resolvedName || syncName;
+  const initial = displayName.charAt(0).toUpperCase() || "?";
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onDown(e: MouseEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("[data-user-menu]")) return;
-      setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [menuOpen]);
+  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+    queryKey: ["header-notifications", user.id],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return [];
+      return fetchNotifications({ data: { accessToken: token } });
+    },
+  });
 
-  const initial =
-    (user?.user_metadata?.full_name as string | undefined)?.[0]?.toUpperCase() ??
-    (user?.user_metadata?.name as string | undefined)?.[0]?.toUpperCase() ??
-    user?.email?.[0]?.toUpperCase() ??
-    "?";
-
-  const displayName =
-    (user?.user_metadata?.full_name as string | undefined) ??
-    (user?.user_metadata?.name as string | undefined) ??
-    user?.email ??
-    "Signed in";
-
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    await router.navigate({ to: "/auth", replace: true });
-  }
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) await navigate({ to: "/auth", replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24 lg:pb-0">
@@ -88,7 +113,9 @@ function AppLayout() {
                   key={t.to}
                   to={t.to}
                   className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition ${
-                    active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                 >
                   <t.icon className="h-4 w-4" />
@@ -99,48 +126,68 @@ function AppLayout() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <button className="grid h-10 w-10 place-items-center rounded-xl border border-border bg-white text-muted-foreground transition hover:text-foreground">
-              <Bell className="h-4 w-4" />
-            </button>
-
-            <div className="relative" data-user-menu>
-              <button
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-xl border border-border bg-white pl-1 pr-2.5 py-1 text-sm transition hover:bg-muted"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-              >
-                <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-primary/15 to-secondary/15 font-semibold text-primary">
-                  {initial}
-                </div>
-                <span className="hidden text-sm font-medium text-foreground sm:inline">
-                  {displayName}
-                </span>
-              </button>
-
-              {menuOpen ? (
-                <div
-                  role="menu"
-                  className="absolute right-0 top-12 z-40 w-56 overflow-hidden rounded-2xl border border-border bg-card shadow-elevated"
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 rounded-xl"
+                  aria-label="Notifications"
                 >
-                  <div className="border-b border-border/60 px-3.5 py-3">
-                    <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
-                    {user?.email ? (
-                      <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSignOut}
-                    className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-foreground transition hover:bg-muted"
-                  >
-                    <LogOut className="h-4 w-4 text-muted-foreground" />
-                    Sign out
-                  </button>
+                  <Bell className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80">
+                <h2 className="font-display text-sm font-bold">Notifications</h2>
+                <div className="mt-3 space-y-2">
+                  {notificationsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading notifications…</p>
+                  ) : notifications.length ? (
+                    notifications.map((notification) => (
+                      <div key={notification.id} className="rounded-lg border border-border p-3">
+                        <p className="text-sm font-medium">Asset match detected</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {notification.location_name || "Unknown location"}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      No notifications available.
+                    </p>
+                  )}
                 </div>
-              ) : null}
-            </div>
+              </PopoverContent>
+            </Popover>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-10 gap-2 rounded-xl px-1.5 pr-2.5"
+                  aria-label="Open profile menu"
+                >
+                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/10 font-semibold text-primary">
+                    {initial}
+                  </span>
+                  <span className="hidden max-w-[10rem] truncate text-sm font-medium text-foreground sm:inline">
+                    {displayName}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>
+                  <span className="block truncate">{displayName}</span>
+                  <span className="block truncate text-xs font-normal text-muted-foreground">
+                    {user.email}
+                  </span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void handleSignOut()}>
+                  <LogOut /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
@@ -162,7 +209,7 @@ function AppLayout() {
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
-                <t.icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+                <t.icon className={`h-5 w-5 ${active ? "" : ""}`} strokeWidth={active ? 2.5 : 2} />
                 {t.label}
               </Link>
             );

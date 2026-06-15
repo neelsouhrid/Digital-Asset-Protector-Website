@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shield, Mail, Lock } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { supabase, signInWithGoogle } from "@/integrations/supabase/client";
 
@@ -22,17 +22,48 @@ function SignIn() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
+  useEffect(() => {
+    let active = true;
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active && data.user) void navigate({ to: "/app", replace: true });
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (active && event === "SIGNED_IN" && session) {
+        void navigate({ to: "/app", replace: true });
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setIsSubmitting(true);
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    setIsSubmitting(false);
-    if (signInError) {
-      setError(signInError.message);
-      return;
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+      await navigate({ to: "/app", replace: true });
+    } catch (signInError) {
+      setError(
+        signInError instanceof Error ? signInError.message : "Unable to sign in. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-    await navigate({ to: "/app", replace: true });
   }
 
   async function handleGoogle() {
@@ -50,7 +81,14 @@ function SignIn() {
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to access your protected library."
-      footer={<>New to Asset Vault? <Link to="/auth/register" className="font-semibold text-primary hover:underline">Create an account</Link></>}
+      footer={
+        <>
+          New to Asset Vault?{" "}
+          <Link to="/auth/register" className="font-semibold text-primary hover:underline">
+            Create an account
+          </Link>
+        </>
+      }
       cta="Sign in"
       error={error}
       isSubmitting={isSubmitting}
@@ -58,15 +96,55 @@ function SignIn() {
       onSubmit={handleSubmit}
       onGoogle={handleGoogle}
     >
-      <Field icon={Mail} label="Email" type="email" placeholder="you@studio.com" value={email} onChange={setEmail} autoComplete="email" />
-      <Field icon={Lock} label="Password" type="password" placeholder="••••••••" value={password} onChange={setPassword} autoComplete="current-password" />
+      <Field
+        icon={Mail}
+        label="Email"
+        type="email"
+        placeholder="you@studio.com"
+        value={email}
+        onChange={setEmail}
+        autoComplete="email"
+      />
+      <Field
+        icon={Lock}
+        label="Password"
+        type="password"
+        placeholder="••••••••"
+        value={password}
+        onChange={setPassword}
+        autoComplete="current-password"
+      />
     </AuthShell>
   );
 }
 
 export function AuthShell({
-  title, subtitle, children, cta, footer, extra, error, message, isSubmitting = false, isGoogleLoading = false, onSubmit, onGoogle,
-}: { title: string; subtitle: string; children: React.ReactNode; cta: string; footer: React.ReactNode; extra?: React.ReactNode; error?: string; message?: string; isSubmitting?: boolean; isGoogleLoading?: boolean; onSubmit?: (event: FormEvent<HTMLFormElement>) => void; onGoogle?: () => void }) {
+  title,
+  subtitle,
+  children,
+  cta,
+  footer,
+  extra,
+  error,
+  message,
+  isSubmitting = false,
+  isGoogleLoading = false,
+  onSubmit,
+  onGoogle,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+  cta: string;
+  footer: React.ReactNode;
+  extra?: React.ReactNode;
+  error?: string;
+  message?: string;
+  isSubmitting?: boolean;
+  isGoogleLoading?: boolean;
+  onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+  onGoogle?: () => void;
+}) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
       <div className="absolute inset-0 -z-10 gradient-hero" />
@@ -94,16 +172,31 @@ export function AuthShell({
 
           <div className="my-5 flex items-center gap-3">
             <div className="h-px flex-1 bg-border" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">or</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              or
+            </span>
             <div className="h-px flex-1 bg-border" />
           </div>
 
           <form onSubmit={onSubmit}>
             {extra}
             <div className="space-y-4">{children}</div>
-            {error ? <p role="alert" className="mt-4 text-sm text-destructive">{error}</p> : null}
-            {message ? <p role="status" className="mt-4 text-sm text-success">{message}</p> : null}
-            <Button type="submit" variant="hero" disabled={isSubmitting} className="mt-6 h-11 w-full text-sm">
+            {error ? (
+              <p role="alert" className="mt-4 text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+            {message ? (
+              <p role="status" className="mt-4 text-sm text-success">
+                {message}
+              </p>
+            ) : null}
+            <Button
+              type="submit"
+              variant="hero"
+              disabled={isSubmitting}
+              className="mt-6 h-11 w-full text-sm"
+            >
               {isSubmitting ? "Please wait…" : cta}
             </Button>
           </form>
@@ -115,10 +208,28 @@ export function AuthShell({
   );
 }
 
-export function Field({ icon: Icon, label, type, placeholder, value, onChange, autoComplete }: { icon: React.ElementType; label: string; type: string; placeholder: string; value?: string; onChange?: (value: string) => void; autoComplete?: string }) {
+export function Field({
+  icon: Icon,
+  label,
+  type,
+  placeholder,
+  value,
+  onChange,
+  autoComplete,
+}: {
+  icon: React.ElementType;
+  label: string;
+  type: string;
+  placeholder: string;
+  value?: string;
+  onChange?: (value: string) => void;
+  autoComplete?: string;
+}) {
   return (
     <div>
-      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</label>
+      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
       <div className="group relative">
         <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -138,7 +249,10 @@ export function Field({ icon: Icon, label, type, placeholder, value, onChange, a
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4">
-      <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.24 1.3-1.7 3.8-5.5 3.8-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.4 14.6 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12s4.3 9.5 9.5 9.5c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.5H12z" />
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.5c-.24 1.3-1.7 3.8-5.5 3.8-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.4 14.6 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12s4.3 9.5 9.5 9.5c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.5H12z"
+      />
     </svg>
   );
 }
