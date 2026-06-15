@@ -18,3 +18,27 @@ writeFileSync(
   'utf8'
 );
 console.log('[post-build] Wrote dist/server/package.json {"type":"module"}');
+
+import { readFileSync } from 'fs';
+const serverPath = join('dist', 'server', 'server.js');
+let code = readFileSync(serverPath, 'utf8');
+
+// Patch the catch block and catastrophic error normalizer to include error details in the HTML
+code = code.replace(
+  /function renderErrorPage\(\) \{([\s\S]*?)return `<!doctype html>([\s\S]*?)<\/html>`;\n\}/,
+  `function renderErrorPage(errorMsg = '') {\n$1return \`<!doctype html>$2<!-- SSR_ERROR: \${errorMsg} -->\\n</html>\`;\n}`
+);
+
+code = code.replace(
+  /new Response\(renderErrorPage\(\),/g,
+  `new Response(renderErrorPage(String(error?.message || error || 'Unknown')),`
+);
+
+code = code.replace(
+  /return new Response\(renderErrorPage\(\)/g,
+  `return new Response(renderErrorPage(String(typeof error !== 'undefined' ? error : 'Unknown'))`
+);
+
+writeFileSync(serverPath, code, 'utf8');
+console.log('[post-build] Patched dist/server/server.js to expose SSR errors in HTML');
+
