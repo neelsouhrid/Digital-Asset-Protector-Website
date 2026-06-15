@@ -16,11 +16,8 @@
   command = "vite dev"
   port = 3000
 
-# SPA-fallback: any route that the SSR function doesn't match gets
-# rewritten to the server function, which then streams the rendered HTML
-# (or, for assets, falls through to dist/client/).
-[[redirects]]
-  from = "/*"
-  to = "/.netlify/functions/server"
-  status = 200
-  force = false
+# No manual redirects needed — the @netlify/vite-plugin-tanstack-start
+# plugin emits a v2 Netlify function at .netlify/v1/functions/server.mjs
+# that declares path = "/*" in its config export, so Netlify automatically
+# routes all requests through the SSR handler. Adding a [[redirects]] here
+# would conflict and cause 500 errors by pointing at the wrong endpoint.
