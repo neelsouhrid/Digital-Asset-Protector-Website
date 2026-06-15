@@ -1,20 +1,20 @@
-// Post-build patch: modify the SSR error page to include the actual error
-// message so we can diagnose 500s on Netlify. Remove this once debugging is done.
-import { readFileSync, writeFileSync } from 'fs';
+// Post-build: ensure dist/server/ is treated as ESM by Node.js.
+//
+// The Vite SSR build emits dist/server/server.js with ESM syntax (export {}).
+// On Netlify's Lambda runtime the root package.json (which has "type":"module")
+// may not be present alongside the function, so Node.js defaults .js → CJS
+// and chokes on the `export` keyword.
+//
+// Dropping a tiny package.json into dist/server/ forces Node.js to treat every
+// .js file in that tree as ESM.
+import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
-const serverPath = join('dist', 'server', 'server.js');
-let code = readFileSync(serverPath, 'utf8');
-
-// Patch the catch block to include error details in the HTML
-code = code.replace(
-  /catch \(error\) \{\s*console\.error\(error\);\s*return new Response\(renderErrorPage\(\)/,
-  `catch (error) {
-      console.error(error);
-      const msg = error?.message || String(error);
-      const stack = error?.stack || '';
-      return new Response(renderErrorPage() + '<!-- SSR_ERROR: ' + msg.replace(/--/g,'- -') + ' STACK: ' + stack.replace(/--/g,'- -') + ' -->'`
+const dir = join('dist', 'server');
+mkdirSync(dir, { recursive: true });
+writeFileSync(
+  join(dir, 'package.json'),
+  JSON.stringify({ type: 'module' }, null, 2) + '\n',
+  'utf8'
 );
-
-writeFileSync(serverPath, code, 'utf8');
-console.log('[patch-error-page] Patched dist/server/server.js to expose SSR errors');
+console.log('[post-build] Wrote dist/server/package.json {"type":"module"}');
