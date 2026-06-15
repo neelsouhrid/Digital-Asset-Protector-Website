@@ -1,9 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || "https://placeholder.supabase.co";
+const supabasePublishableKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "placeholder_key";
 
-if (!supabaseUrl || !supabasePublishableKey) {
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
   // Surfaced loudly in dev — the .env file ships the values, so this branch
   // should only fire if someone deploys without configuring env.
   // eslint-disable-next-line no-console
